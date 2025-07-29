@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enhanced Telemetry Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://cdn.jsdelivr.net/npm/particles.js@2.0.0/particles.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    :root {
+      --primary: #00ff9d;
+      --primary-dark: #00cc7d;
+      --bg-dark: #0a0a0a;
+      --bg-card: rgba(0, 255, 157, 0.15);
+      --text: #ffffff;
+      --border: rgba(0, 255, 157, 0.2);
+      --shadow: rgba(0, 255, 157, 0.2);
+      --shadow-hover: rgba(0, 255, 157, 0.3);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'JetBrains Mono', monospace;
+      background: var(--bg-dark);
+      color: var(--text);
+      height: 100vh;
+      margin: 0;
+      overflow: hidden;
+    }
+
+    #particles-js {
+      position: fixed;
+      width: 100%;
+      height: 100%;
+      top: 0;
+      left: 0;
+      z-index: -1;
+    }
+
+    .dashboard {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      grid-template-rows: repeat(5, 1fr);
+      gap: 0.5rem;
+      padding: 0.75rem;
+      height: 100vh;
+      width: 100%;
+      max-width: 1400px;
+      margin: 0 auto;
+      box-sizing: border-box;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border-radius: 8px;
+      padding: 0.75rem;
+      box-shadow: 0 2px 8px var(--shadow);
+      border: 1px solid var(--border);
+      backdrop-filter: blur(6px);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      overflow: hidden;
+      cursor: pointer;
+      position: relative;
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px var(--shadow-hover);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.5rem;
+    }
+
+    .card-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--primary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .icon {
+      color: var(--primary);
+      width: 16px;
+      height: 16px;
+    }
+
+    .metric {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--primary);
+      text-shadow: 0 0 8px rgba(0, 255, 157, 0.3);
+    }
+
+    .metric.enlarged {
+      font-size: 2rem;
+      transform: scale(1.1);
+      transition: all 0.3s ease;
+    }
+
+    .unit {
+      font-size: 0.7rem;
+      color: var(--primary-dark);
+      margin-left: 0.2rem;
+    }
+
+    /* Status Indicators */
+    .status-safe { color: #22c55e; }
+    .status-warning { color: #eab308; }
+    .status-danger { color: #ef4444; }
+
+    .status-bg-safe { 
+      background: rgba(34, 197, 94, 0.15); 
+      border-color: rgba(34, 197, 94, 0.3); 
+    }
+    .status-bg-warning { 
+      background: rgba(234, 179, 8, 0.15); 
+      border-color: rgba(234, 179, 8, 0.3); 
+    }
+    .status-bg-danger { 
+      background: rgba(239, 68, 68, 0.15); 
+      border-color: rgba(239, 68, 68, 0.3); 
+    }
+
+    /* Map Container */
+    .map-container {
+      grid-column: span 4;
+      grid-row: span 2;
+    }
+
+    #map {
+      height: calc(100% - 40px);
+      border-radius: 6px;
+      z-index: 1;
+    }
+
+    /* 3D Satellite Container */
+    .satellite-3d {
+      grid-column: span 4;
+      grid-row: span 2;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .satellite-model {
+      position: relative;
+      width: 120px;
+      height: 120px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 4rem;
+      animation: satelliteRotate 10s linear infinite;
+    }
+
+    .orbit-ring {
+      position: absolute;
+      border: 2px solid rgba(0, 255, 157, 0.3);
+      border-radius: 50%;
+      animation: orbitRotate 15s linear infinite;
+    }
+
+    .orbit-ring:nth-child(1) {
+      width: 200px;
+      height: 200px;
+      top: -40px;
+      left: -40px;
+    }
+
+    .orbit-ring:nth-child(2) {
+      width: 160px;
+      height: 160px;
+      top: -20px;
+      left: -20px;
+      animation-duration: 20s;
+      animation-direction: reverse;
+    }
+
+    .orbit-ring:nth-child(3) {
+      width: 120px;
+      height: 120px;
+      top: 0;
+      left: 0;
+      animation-duration: 25s;
+    }
+
+    @keyframes satelliteRotate {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes orbitRotate {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    /* Hardware Assessment Grid */
+    .hardware-grid {
+      grid-column: span 8;
+      grid-row: span 2;
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 0.5rem;
+      padding: 0.5rem;
+    }
+
+    .hardware-card {
+      background: var(--bg-card);
+      border-radius: 6px;
+      padding: 0.75rem;
+      text-align: center;
+      border: 1px solid var(--border);
+      transition: all 0.3s ease;
+      cursor: pointer;
+    }
+
+    .hardware-card:hover {
+      transform: scale(1.05);
+      box-shadow: 0 4px 12px var(--shadow-hover);
+    }
+
+    .hardware-safe {
+      border-color: #22c55e;
+      background: rgba(34, 197, 94, 0.1);
+    }
+
+    .hardware-warning {
+      border-color: #eab308;
+      background: rgba(234, 179, 8, 0.1);
+    }
+
+    .hardware-danger {
+      border-color: #ef4444;
+      background: rgba(239, 68, 68, 0.1);
+    }
+
+    .hardware-name {
+      font-size: 0.7rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      color: var(--primary);
+    }
+
+    .hardware-status {
+      font-size: 1.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .hardware-health {
+      font-size: 0.8rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    .health-bar {
+      width: 100%;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-bottom: 0.25rem;
+    }
+
+    .health-fill {
+      height: 100%;
+      transition: width 0.5s ease;
+      border-radius: 2px;
+    }
+
+    .health-safe { background: #22c55e; }
+    .health-warning { background: #eab308; }
+    .health-danger { background: #ef4444; }
+
+    /* Timer Styles */
+    .timer-container {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      text-align: center;
+    }
+
+    .timer-display {
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 4px;
+      padding: 0.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .countdown {
+      font-size: 1rem;
+      color: var(--primary);
+      text-shadow: 0 0 6px rgba(0, 255, 157, 0.3);
+      font-weight: 700;
+    }
+
+    .timer-controls {
+      display: flex;
+      gap: 0.25rem;
+      justify-content: center;
+    }
+
+    .timer-btn {
+      padding: 0.25rem 0.5rem;
+      border: none;
+      border-radius: 0.25rem;
+      font-weight: 600;
+      color: white;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 0.6rem;
+      text-transform: uppercase;
+    }
+
+    .timer-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .timer-btn.start { background: var(--primary); }
+    .timer-btn.start:hover:not(:disabled) { background: var(--primary-dark); }
+    .timer-btn.stop { background: #dc2626; }
+    .timer-btn.stop:hover:not(:disabled) { background: #b91c1c; }
+    .timer-btn.reset { background: #ca8a04; }
+    .timer-btn.reset:hover:not(:disabled) { background: #a16207; }
+
+    /* Chart Container */
+    .chart-container {
+      height: 60px;
+      margin-top: 0.5rem;
+    }
+
+    /* Compact Speedometer */
+    .speedometer {
+      background: linear-gradient(135deg, rgba(0, 40, 0, 0.95), rgba(0, 25, 0, 0.95));
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+      text-align: center;
+      overflow: hidden;
+      padding: 0.5rem;
+    }
+
+    .speedometer::before {
+      content: '';
+      position: absolute;
+      top: -1px;
+      left: -1px;
+      right: -1px;
+      bottom: -1px;
+      border-radius: 8px;
+      background: linear-gradient(45deg, rgba(51, 255, 51, 0.2), transparent, rgba(51, 255, 51, 0.2));
+      z-index: -1;
+      animation: borderGlow 4s ease-in-out infinite;
+    }
+
+    .speed-display {
+      font-size: 1.5rem;
+      font-weight: 700;
+      text-shadow: 0 0 8px rgba(51, 255, 51, 0.5);
+      color: #33ff33;
+      margin-bottom: 0.5rem;
+    }
+
+    .speed-unit {
+      font-size: 0.6rem;
+      opacity: 0.7;
+    }
+
+    .progress-container {
+      width: 80%;
+      margin-top: 0.5rem;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 6px;
+      background: rgba(51, 255, 51, 0.1);
+      border-radius: 3px;
+      overflow: hidden;
+      border: 1px solid rgba(51, 255, 51, 0.2);
+    }
+
+    .progress {
+      height: 100%;
+      background: linear-gradient(90deg, rgba(51, 255, 51, 0.8), rgba(51, 255, 51, 1));
+      border-radius: 3px;
+      transition: width 0.5s ease-in-out;
+      box-shadow: 0 0 6px rgba(51, 255, 51, 0.3);
+    }
+
+    @keyframes borderGlow {
+      0%, 100% { opacity: 0.3; }
+      50% { opacity: 0.8; }
+    }
+
+    /* Responsive Design */
+    @media (max-width: 1200px) {
+      .dashboard {
+        grid-template-columns: repeat(4, 1fr);
+        grid-template-rows: repeat(8, 1fr);
+        height: auto;
+        min-height: 100vh;
+        overflow-y: auto;
+      }
+      
+      .map-container, .satellite-3d {
+        grid-column: span 2;
+        grid-row: span 2;
+      }
+      
+      .hardware-grid {
+        grid-column: span 4;
+        grid-row: span 3;
+        grid-template-columns: repeat(4, 1fr);
+      }
+    }
+
+    @media (max-width: 768px) {
+      .dashboard {
+        grid-template-columns: repeat(2, 1fr);
+        grid-template-rows: repeat(12, 1fr);
+        padding: 0.25rem;
+        gap: 0.25rem;
+      }
+      
+      .map-container, .satellite-3d, .hardware-grid {
+        grid-column: span 2;
+      }
+      
+      .hardware-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      
+      .metric {
+        font-size: 1.2rem;
+      }
+      
+      .speed-display {
+        font-size: 1.2rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="particles-js"></div>
+  
+  <div class="dashboard">
+    <!-- Row 1: Metric Cards -->
+    <div class="card" id="temperature-card">
+      <div class="card-header">
+        <span class="card-title">Temperature</span>
+        <i data-lucide="thermometer" class="icon"></i>
+      </div>
+      <div class="metric" id="temperature">24.5°C</div>
+      <div class="chart-container" id="temp-chart-container" style="display: none;">
+        <canvas id="tempChart"></canvas>
+      </div>
+    </div>
+
+    <div class="card" id="altitude-card">
+      <div class="card-header">
+        <span class="card-title">Altitude</span>
+        <i data-lucide="mountain" class="icon"></i>
+      </div>
+      <div class="metric" id="altitude">1,234<span class="unit">m</span></div>
+      <div class="chart-container" id="alt-chart-container" style="display: none;">
+        <canvas id="altChart"></canvas>
+      </div>
+    </div>
+
+    <div class="card" id="pressure-card">
+      <div class="card-header">
+        <span class="card-title">Pressure</span>
+        <i data-lucide="gauge" class="icon"></i>
+      </div>
+      <div class="metric" id="pressure">1,013<span class="unit">hPa</span></div>
+      <div class="chart-container" id="press-chart-container" style="display: none;">
+        <canvas id="pressChart"></canvas>
+      </div>
+    </div>
+
+    <div class="card" id="angle-card">
+      <div class="card-header">
+        <span class="card-title">Angle</span>
+        <i data-lucide="compass" class="icon"></i>
+      </div>
+      <div class="metric" id="angle">45.2<span class="unit">°</span></div>
+      <div class="chart-container" id="angle-chart-container" style="display: none;">
+        <canvas id="angleChart"></canvas>
+      </div>
+    </div>
+
+    <!-- Balloon Status Card -->
+    <div class="card" id="balloon-status-card">
+      <div class="card-header">
+        <span class="card-title">Balloon Status</span>
+        <div id="balloon-icon" class="status-safe" style="font-size: 1.2rem;">🎈</div>
+      </div>
+      <div class="metric" id="balloon-status">Safe & Stable</div>
+      <div id="balloon-pulse" class="status-safe" style="width: 8px; height: 8px; border-radius: 50%; margin-top: 0.5rem; animation: pulse 2s infinite;"></div>
+    </div>
+
+    <!-- Landing Predictor -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Landing In</span>
+        <i data-lucide="target" class="icon"></i>
+      </div>
+      <div class="metric" id="landing-time">15.0<span class="unit">min</span></div>
+    </div>
+
+    <!-- Stability Indicator -->
+    <div class="card" id="stability-card">
+      <div class="card-header">
+        <span class="card-title">Stability</span>
+        <i data-lucide="activity" class="icon"></i>
+      </div>
+      <div class="metric status-safe" id="stability-status">Stable</div>
+    </div>
+
+    <!-- Mission Timer -->
+    <div class="card">
+      <div class="timer-container">
+        <div class="card-header">
+          <span class="card-title">Mission Timer</span>
+          <i data-lucide="timer" class="icon"></i>
+        </div>
+        <div class="timer-display">
+          <div class="countdown" id="countdown">05:55:25</div>
+        </div>
+        <div class="timer-controls">
+          <button id="startBtn" class="timer-btn start">Start</button>
+          <button id="stopBtn" class="timer-btn stop" disabled>Stop</button>
+          <button id="resetBtn" class="timer-btn reset">Reset</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Row 2-3: Map and 3D Satellite -->
+    <div class="card map-container">
+      <div class="card-header">
+        <span class="card-title">Live Location & Prediction</span>
+        <i data-lucide="map-pin" class="icon"></i>
+      </div>
+      <div id="map"></div>
+    </div>
+
+    <div class="card satellite-3d">
+      <div class="card-header">
+        <span class="card-title">3D Satellite Position</span>
+        <i data-lucide="satellite" class="icon"></i>
+      </div>
+      <div class="satellite-model">
+        <div class="orbit-ring"></div>
+        <div class="orbit-ring"></div>
+        <div class="orbit-ring"></div>
+        🛰️
+      </div>
+      <div style="position: absolute; bottom: 1rem; left: 1rem; font-size: 0.7rem; color: var(--primary);">
+        <div>Orbital Velocity: <span id="orbital-velocity">0</span> km/h</div>
+        <div>Altitude: <span id="orbital-altitude">0</span> m</div>
+      </div>
+    </div>
+
+    <!-- Row 4-5: Hardware Assessment -->
+    <div class="card" style="grid-column: span 8; grid-row: span 2;">
+      <div class="card-header">
+        <span class="card-title">Hardware Assessment</span>
+        <i data-lucide="hard-drive" class="icon"></i>
+      </div>
+      <div class="hardware-grid" id="hardware-grid">
+        <!-- Hardware cards will be generated by JavaScript -->
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Particles.js configuration
+    const particlesConfig = {
+      particles: {
+        number: { value: 50, density: { enable: true, value_area: 800 } },
+        color: { value: "#00ff9d" },
+        shape: { type: "circle" },
+        opacity: { value: 0.3, random: true },
+        size: { value: 2, random: true },
+        line_linked: {
+          enable: true,
+          distance: 150,
+          color: "#00ff9d",
+          opacity: 0.2,
+          width: 1
+        },
+        move: {
+          enable: true,
+          speed: 0.5,
+          direction: "none",
+          random: true,
+          straight: false,
+          out_mode: "out",
+          bounce: false
+        }
+      },
+      interactivity: {
+        detect_on: "canvas",
+        events: {
+          onhover: { enable: true, mode: "grab" },
+          onclick: { enable: true, mode: "push" },
+          resize: true
+        },
+        modes: {
+          grab: { distance: 140, line_linked: { opacity: 1 } },
+          push: { particles_nb: 4 }
+        }
+      },
+      retina_detect: true
+    };
+
+    // Global variables
+    let map, marker, predictionMarker, predictionPath;
+    let charts = {};
+    let metricData = {
+      temperature: { values: [], timestamps: [] },
+      altitude: { values: [], timestamps: [] },
+      pressure: { values: [], timestamps: [] },
+      angle: { values: [], timestamps: [] }
+    };
+    let currentValues = {
+      temperature: 24.5,
+      altitude: 1234,
+      pressure: 1013,
+      angle: 45.2,
+      speed: 0,
+      coordinates: { lat: 51.5074, lon: -0.1278 }
+    };
+    let balloonStatus = 'safe';
+    let stabilityStatus = 'stable';
+    let landingPrediction = 15.0;
+    let timer = { hours: 5, minutes: 55, seconds: 25 };
+    let isTimerRunning = false;
+    let timerInterval = null;
+    let selectedMetric = null;
+    let satelliteRotation = 0;
+
+    // Hardware status data
+    const hardwareComponents = [
+      { name: 'Primary SSD', status: 'safe', health: 95 },
+      { name: 'Secondary HDD', status: 'safe', health: 88 },
+      { name: 'System RAM', status: 'warning', health: 72 },
+      { name: 'Processor', status: 'safe', health: 91 },
+      { name: 'Motherboard', status: 'safe', health: 96 },
+      { name: 'Power Supply', status: 'danger', health: 45 },
+      { name: 'Network Card', status: 'safe', health: 89 }
+    ];
+
+    // Initialize everything when DOM is loaded
+    document.addEventListener('DOMContentLoaded', function() {
+      // Initialize particles.js
+      if (window.particlesJS) {
+        window.particlesJS('particles-js', particlesConfig);
+      }
+
+      // Initialize Lucide icons
+      if (window.lucide) {
+        lucide.createIcons();
+      }
+
+      // Initialize components
+      initializeMap();
+      initializeCharts();
+      initializeHardwareGrid();
+      initializeEventListeners();
+      initializeTimer();
+
+      // Start data updates
+      setInterval(updateMetrics, 2000);
+      setInterval(updateStatuses, 5000);
+      setInterval(() => {
+        satelliteRotation = (satelliteRotation + 2) % 360;
+      }, 100);
+    });
+
+    // Initialize map
+    function initializeMap() {
+      map = L.map('map').setView([currentValues.coordinates.lat, currentValues.coordinates.lon], 10);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+
+      marker = L.marker([currentValues.coordinates.lat, currentValues.coordinates.lon])
+        .addTo(map)
+        .bindPopup('Current Position');
+
+      // Add prediction marker
+      const predLat = currentValues.coordinates.lat + 0.01;
+      const predLon = currentValues.coordinates.lon + 0.01;
+      predictionMarker = L.marker([predLat, predLon], {
+        icon: L.divIcon({
+          className: 'prediction-marker',
+          html: '<div style="background: #ff6b6b; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>',
+          iconSize: [16, 16]
+        })
+      }).addTo(map).bindPopup('Predicted Landing');
+
+      // Add prediction path
+      predictionPath = L.polyline([
+        [currentValues.coordinates.lat, currentValues.coordinates.lon],
+        [predLat, predLon]
+      ], {
+        color: '#00ff9d',
+        weight: 3,
+        opacity: 0.7,
+        dashArray: '10, 10'
+      }).addTo(map);
+    }
+
+    // Initialize charts
+    function initializeCharts() {
+      const chartOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            titleColor: '#00ff9d',
+            bodyColor: '#00ff9d',
+            borderColor: 'rgba(0, 255, 157, 0.2)',
+            borderWidth: 1
+          }
+        },
+        scales: {
+          x: {
+            ticks: { color: '#00ff9d', font: { size: 8 } },
+            grid: { color: 'rgba(0, 255, 157, 0.1)' }
+          },
+          y: {
+            ticks: { color: '#00ff9d', font: { size: 8 } },
+            grid: { color: 'rgba(0, 255, 157, 0.1)' }
+          }
+        }
+      };
+
+      // Initialize charts for each metric
+      ['temp', 'alt', 'press', 'angle'].forEach(metric => {
+        const canvas = document.getElementById(`${metric}Chart`);
+        if (canvas) {
+          const ctx = canvas.getContext('2d');
+          charts[metric] = new Chart(ctx, {
+            type: 'line',
+            data: {
+              labels: [],
+              datasets: [{
+                data: [],
+                borderColor: '#00ff9d',
+                backgroundColor: 'rgba(0, 255, 157, 0.2)',
+                borderWidth: 2,
+                pointRadius: 1,
+                tension: 0.4,
+                fill: true
+              }]
+            },
+            options: chartOptions
+          });
+        }
+      });
+    }
+
+    // Initialize hardware grid
+    function initializeHardwareGrid() {
+      const grid = document.getElementById('hardware-grid');
+      grid.innerHTML = '';
+
+      hardwareComponents.forEach((hw, index) => {
+        const card = document.createElement('div');
+        card.className = `hardware-card hardware-${hw.status}`;
+        card.innerHTML = `
+          <div class="hardware-name">${hw.name}</div>
+          <div class="hardware-status ${hw.status === 'safe' ? 'status-safe' : hw.status === 'warning' ? 'status-warning' : 'status-danger'}">
+            ${hw.status === 'safe' ? '✓' : hw.status === 'warning' ? '⚠' : '✗'}
+          </div>
+          <div class="hardware-health ${hw.status === 'safe' ? 'status-safe' : hw.status === 'warning' ? 'status-warning' : 'status-danger'}">
+            ${hw.health}%
+          </div>
+          <div class="health-bar">
+            <div class="health-fill health-${hw.status}" style="width: ${hw.health}%"></div>
+          </div>
+          <div style="font-size: 0.6rem; text-transform: uppercase; font-weight: 600;" class="${hw.status === 'safe' ? 'status-safe' : hw.status === 'warning' ? 'status-warning' : 'status-danger'}">
+            ${hw.status}
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    // Initialize event listeners
+    function initializeEventListeners() {
+      // Metric card clicks
+      ['temperature', 'altitude', 'pressure', 'angle'].forEach(metric => {
+        const card = document.getElementById(`${metric}-card`);
+        if (card) {
+          card.addEventListener('click', () => {
+            toggleMetricChart(metric);
+          });
+        }
+      });
+
+      // Timer controls
+      const startBtn = document.getElementById('startBtn');
+      const stopBtn = document.getElementById('stopBtn');
+      const resetBtn = document.getElementById('resetBtn');
+      
+      if (startBtn) startBtn.addEventListener('click', startTimer);
+      if (stopBtn) stopBtn.addEventListener('click', stopTimer);
+      if (resetBtn) resetBtn.addEventListener('click', resetTimer);
+    }
+
+    // Toggle metric chart display
+    function toggleMetricChart(metric) {
+      const chartContainer = document.getElementById(`${metric.substring(0, 4)}-chart-container`);
+      const metricElement = document.getElementById(metric);
+      
+      if (selectedMetric === metric) {
+        // Hide chart and return metric to normal
+        if (chartContainer) chartContainer.style.display = 'none';
+        if (metricElement) metricElement.classList.remove('enlarged');
+        selectedMetric = null;
+      } else {
+        // Hide all other charts first
+        ['temp', 'alt', 'press', 'angle'].forEach(m => {
+          const container = document.getElementById(`${m}-chart-container`);
+          if (container) container.style.display = 'none';
+          const el = document.getElementById(m === 'temp' ? 'temperature' : m === 'alt' ? 'altitude' : m === 'press' ? 'pressure' : 'angle');
+          if (el) el.classList.remove('enlarged');
+        });
+        
+        // Show selected chart and enlarge metric
+        if (chartContainer) chartContainer.style.display = 'block';
+        if (metricElement) metricElement.classList.add('enlarged');
+        selectedMetric = metric;
+        
+        // Update chart data
+        updateChart(metric);
+      }
+    }
+
+    // Update chart data
+    function updateChart(metric) {
+      const chartKey = metric.substring(0, 4);
+      const dataKey = metric;
+      
+      if (charts[chartKey] && metricData[dataKey]) {
+        charts[chartKey].data.labels = metricData[dataKey].timestamps;
+        charts[chartKey].data.datasets[0].data = metricData[dataKey].values;
+        charts[chartKey].update();
+      }
+    }
+
+    // Timer functions
+    function initializeTimer() {
+      updateTimerDisplay();
+    }
+
+    function startTimer() {
+      if (!isTimerRunning && (timer.hours > 0 || timer.minutes > 0 || timer.seconds > 0)) {
+        isTimerRunning = true;
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        if (startBtn) startBtn.disabled = true;
+        if (stopBtn) stopBtn.disabled = false;
+        
+        timerInterval = setInterval(() => {
+          if (timer.seconds > 0) {
+            timer.seconds--;
+          } else if (timer.minutes > 0) {
+            timer.minutes--;
+            timer.seconds = 59;
+          } else if (timer.hours > 0) {
+            timer.hours--;
+            timer.minutes = 59;
+            timer.seconds = 59;
+          } else {
+            stopTimer();
+          }
+          updateTimerDisplay();
+        }, 1000);
+      }
+    }
+
+    function stopTimer() {
+      isTimerRunning = false;
+      const startBtn = document.getElementById('startBtn');
+      const stopBtn = document.getElementById('stopBtn');
+      if (startBtn) startBtn.disabled = false;
+      if (stopBtn) stopBtn.disabled = true;
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+      }
+    }
+
+    function resetTimer() {
+      stopTimer();
+      timer = { hours: 5, minutes: 55, seconds: 25 };
+      updateTimerDisplay();
+    }
+
+    function updateTimerDisplay() {
+      const display = document.getElementById('countdown');
+      if (display) {
+        display.textContent = `${String(timer.hours).padStart(2, '0')}:${String(timer.minutes).padStart(2, '0')}:${String(timer.seconds).padStart(2, '0')}`;
+      }
+    }
+
+    // Update balloon status
+    function updateBalloonStatus() {
+      const statusElement = document.getElementById('balloon-status');
+      const iconElement = document.getElementById('balloon-icon');
+      const pulseElement = document.getElementById('balloon-pulse');
+      const cardElement = document.getElementById('balloon-status-card');
+      
+      if (balloonStatus === 'safe') {
+        if (statusElement) {
+          statusElement.textContent = 'Safe & Stable';
+          statusElement.className = 'metric status-safe';
+        }
+        if (iconElement) {
+          iconElement.className = 'status-safe';
+          iconElement.style.fontSize = '1.2rem';
+        }
+        if (pulseElement) {
+          pulseElement.className = 'status-safe';
+          pulseElement.style.backgroundColor = '#22c55e';
+        }
+        if (cardElement) {
+          cardElement.className = 'card status-bg-safe';
+        }
+      } else {
+        if (statusElement) {
+          statusElement.textContent = 'In Danger';
+          statusElement.className = 'metric status-danger';
+        }
+        if (iconElement) {
+          iconElement.className = 'status-danger';
+          iconElement.style.fontSize = '1.2rem';
+        }
+        if (pulseElement) {
+          pulseElement.className = 'status-danger';
+          pulseElement.style.backgroundColor = '#ef4444';
+        }
+        if (cardElement) {
+          cardElement.className = 'card status-bg-danger';
+        }
+      }
+    }
+
+    // Update metrics
+    function updateMetrics() {
+      const now = new Date();
+      const timestamp = now.toLocaleTimeString();
+
+      // Generate new values
+      currentValues.temperature = 20 + Math.random() * 10;
+      currentValues.altitude = 1000 + Math.random() * 1000;
+      currentValues.pressure = 980 + Math.random() * 40;
+      currentValues.angle = Math.random() * 360;
+      currentValues.speed = Math.min(500, currentValues.speed + Math.random() * 50);
+      currentValues.coordinates.lat += (Math.random() - 0.5) * 0.001;
+      currentValues.coordinates.lon += (Math.random() - 0.5) * 0.001;
+
+      // Update displays
+      const tempEl = document.getElementById('temperature');
+      const altEl = document.getElementById('altitude');
+      const pressEl = document.getElementById('pressure');
+      const angleEl = document.getElementById('angle');
+      
+      if (tempEl) tempEl.textContent = `${currentValues.temperature.toFixed(1)}°C`;
+      if (altEl) altEl.innerHTML = `${Math.floor(currentValues.altitude)}<span class="unit">m</span>`;
+      if (pressEl) pressEl.innerHTML = `${Math.floor(currentValues.pressure)}<span class="unit">hPa</span>`;
+      if (angleEl) angleEl.innerHTML = `${currentValues.angle.toFixed(1)}<span class="unit">°</span>`;
+
+      // Update metric data for charts
+      Object.keys(metricData).forEach(key => {
+        metricData[key].values.push(currentValues[key]);
+        metricData[key].timestamps.push(timestamp);
+        
+        if (metricData[key].values.length > 20) {
+          metricData[key].values.shift();
+          metricData[key].timestamps.shift();
+        }
+      });
+
+      // Update selected chart if any
+      if (selectedMetric) {
+        updateChart(selectedMetric);
+      }
+
+      // Update map
+      if (marker && map) {
+        marker.setLatLng([currentValues.coordinates.lat, currentValues.coordinates.lon]);
+        map.setView([currentValues.coordinates.lat, currentValues.coordinates.lon], 10);
+
+        // Update prediction path
+        const predLat = currentValues.coordinates.lat + 0.01;
+        const predLon = currentValues.coordinates.lon + 0.01;
+        if (predictionMarker) predictionMarker.setLatLng([predLat, predLon]);
+        if (predictionPath) {
+          predictionPath.setLatLngs([
+            [currentValues.coordinates.lat, currentValues.coordinates.lon],
+            [predLat, predLon]
+          ]);
+        }
+      }
+
+      // Update satellite orbital data
+      const velocityEl = document.getElementById('orbital-velocity');
+      const altitudeEl = document.getElementById('orbital-altitude');
+      if (velocityEl) velocityEl.textContent = Math.floor(currentValues.speed);
+      if (altitudeEl) altitudeEl.textContent = Math.floor(currentValues.altitude);
+
+      // Update landing prediction
+      landingPrediction = Math.max(0.1, landingPrediction - 0.05);
+      const landingEl = document.getElementById('landing-time');
+      if (landingEl) landingEl.innerHTML = `${landingPrediction.toFixed(1)}<span class="unit">min</span>`;
+    }
+
+    // Update statuses
+    function updateStatuses() {
+      // Randomly update balloon status (10% chance)
+      if (Math.random() < 0.1) {
+        balloonStatus = balloonStatus === 'safe' ? 'danger' : 'safe';
+        updateBalloonStatus();
+      }
+
+      // Randomly update stability status
+      if (Math.random() < 0.15) {
+        const statuses = ['stable', 'wobbling', 'unstable'];
+        stabilityStatus = statuses[Math.floor(Math.random() * statuses.length)];
+        updateStabilityStatus();
+      }
+
+      // Randomly update hardware status
+      if (Math.random() < 0.2) {
+        const randomIndex = Math.floor(Math.random() * hardwareComponents.length);
+        const statuses = ['safe', 'warning', 'danger'];
+        hardwareComponents[randomIndex].status = statuses[Math.floor(Math.random() * statuses.length)];
+        hardwareComponents[randomIndex].health = Math.floor(Math.random() * 100);
+        initializeHardwareGrid();
+      }
+    }
+
+    // Update stability status
+    function updateStabilityStatus() {
+      const element = document.getElementById('stability-status');
+      if (element) {
+        element.className = `metric status-${stabilityStatus === 'stable' ? 'safe' : stabilityStatus === 'wobbling' ? 'warning' : 'danger'}`;
+        element.textContent = stabilityStatus.charAt(0).toUpperCase() + stabilityStatus.slice(1);
+      }
+    }
+
+    // Initialize balloon status
+    updateBalloonStatus();
+  </script>
+</body>
+</html>
